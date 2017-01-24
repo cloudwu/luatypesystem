@@ -15,7 +15,7 @@ ts.foo {
 }
 
 local f = ts.foo:new(1)
-ts[f].f(2)
+f._ref.f(2)
 
 print("f = ", f)
 print("f.f = ", f.f)
@@ -24,7 +24,7 @@ local ff = f.f
 
 print("f.f.owner = ", ff.owner)
 
-ts[f].f(3)
+f._ref.f(3)
 
 print("f.f = ", f.f, "ff.owner = ", ff.owner)
 
@@ -35,7 +35,7 @@ end
 
 ts.collectgarbage()
 
-ts[f].f = nil
+f._ref.f = nil
 print("clear f.f")
 
 ts.collectgarbage()
@@ -44,4 +44,3 @@ ts.delete(f)
 print("delete f")
 
 ts.collectgarbage()
-

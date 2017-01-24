@@ -47,15 +47,6 @@ function typeclass.__call(c, proto)	-- define class
 	return c
 end
 
-local function load_object(obj)
-	local p = objects[obj]
-	if not p then
-		error("object is not in type system")
-	end
-	class[obj] = p
-	return p
-end
-
 local function link_proxy(p, field, obj)
 	local self = proxy[p]
 	local t = self.type.ref[field]
@@ -68,7 +59,7 @@ local function link_proxy(p, field, obj)
 		is_weak = true
 	end
 	if obj then
-		local tp = objects[obj]
+		local tp = obj._ref
 		if not tp then
 			error(string.format("Invalid object for %s.%s", t.name, field))
 		end
@@ -113,7 +104,7 @@ local function new_object(self, ...)
 		end
 		obj._id = id
 	else
-		obj = { owner = false , _mark = not mark_flag, _id = id }
+		obj = { owner = false , _mark = not mark_flag, _id = id, _ref = false }
 	end
 	for k,v in pairs(self.field) do
 		obj[k] = v
@@ -124,12 +115,16 @@ local function new_object(self, ...)
 	for k in pairs(self.weak) do
 		obj[k] = false
 	end
-	if self.ctor then
-		self.ctor(obj, ...)
-	end
 
 	object_ids[id] = obj
-	objects[obj] = type_proxy(obj, self)
+	local tp = type_proxy(obj, self)
+	objects[obj] = tp
+	obj._ref = tp
+
+	if self.ctor then
+		-- If ctor raise error, collectgarbage would recycle obj
+		self.ctor(obj, ...)
+	end
 
 	return obj
 end
@@ -155,13 +150,12 @@ function typemethod:new(...)
 end
 
 function class.type(obj)
-	local p = load_object(obj)
-	return proxy[p].type.name
+	return proxy[obj._ref].type.name
 end
 
 function class.delete(obj)
 	if not root[obj] then
-		local t = objects[obj]
+		local t = obj._ref
 		if t then
 			local p = proxy[t]
 			error(string.format("Already release object with type %s", p.type.name))
@@ -176,7 +170,7 @@ local function do_mark(obj)
 		return
 	end
 	obj._mark = mark_flag
-	local p = proxy[objects[obj]]
+	local p = proxy[obj._ref]
 	if obj.owner then
 		do_mark(obj.owner)
 	end
@@ -230,7 +224,7 @@ function class.get(id)
 end
 
 function class.typename(obj)
-	local t = proxy[objects[obj] ]
+	local t = proxy[obj._ref]
 	return t and t.type.name
 end
 
@@ -248,7 +242,7 @@ local function next_type(c, lastobj)
 		if lastobj == nil then
 			return
 		end
-	until proxy[objects[lastobj] ] == c
+	until proxy[lastobj._ref] == c
 	return lastobj
 end
 
@@ -269,22 +263,16 @@ local function init()
 	setmetatable(class, {
 		__index = function(t, key)
 			local tk = type(key)
-			if tk == "string" then
-				t[key] = setmetatable({
-					name = key,
-					defined = false,
-					ref = {},
-					field = {},
-					weak = {},
-					recycle = setmetatable({}, recycle_mt),
-					keys = { owner = true, _mark = true, _id = true },
-				}, typeclass)
-				return t[key]
-			elseif tk == "table" then
-				return load_object(key)
-			else
-				error(string.format("Invalid use typesystem with type %s", tk))
-			end
+			t[key] = setmetatable({
+				name = key,
+				defined = false,
+				ref = {},
+				field = {},
+				weak = {},
+				recycle = setmetatable({}, recycle_mt),
+				keys = { owner = true, _mark = true, _id = true, _ref = true },
+			}, typeclass)
+			return t[key]
 		end
 	})
 end
